@@ -205,6 +205,7 @@ input[type=file]{display:none}
           <button class="btn g sm" id="bBgFit">填滿方式:拉伸</button>
           <button class="btn g sm" id="bBgDel">移除背景圖</button>
         </div>
+        <p class="hint" id="bgDpi"></p>
       </div>
       <div class="row"><label style="color:var(--ink);font-size:14px"><input type="checkbox" id="snap" checked>移動時自動對齊(會出粉紅輔助線)</label></div>
       <h4>快捷鍵</h4>
@@ -279,6 +280,7 @@ input[type=file]{display:none}
       </div>
 
       <div id="oImg">
+        <p class="hint" id="iDpi"></p>
         <div class="row chips"><button class="btn g sm" id="iBg">設為背景圖</button></div>
       </div>
 
@@ -861,6 +863,13 @@ function docUI(){
   var b=bgObj();
   $('bBgFit').textContent='填滿方式:'+((b&&b.ngFit==='cover')?'保持比例':'拉伸');
   $('bBgFit').disabled=!b;$('bBgDel').disabled=!b;$('bFitBg').disabled=!b;
+  $('bgDpi').innerHTML=b?dpiNote(96/Math.max(b.scaleX||1,b.scaleY||1),'背景圖'):'';
+}
+function dpiNote(d,what){
+  var need=Math.min(S.dpi,outPx().w/(S.w/2.54));d=Math.round(d);
+  if(d>=need*0.9)return '<b>'+what+'夠清楚</b>:印出來約 '+d+' dpi,原圖每一粒像素都會照用,不會被壓縮。';
+  if(d>=100)return '<b>'+what+'還可以</b>:印出來約 '+d+' dpi,近看會有少少模糊。';
+  return '<b style="color:#e09181">'+what+'會模糊</b>:印出來只有約 '+d+' dpi,原圖不夠大。縮小一點,或者換一張更大的原圖。';
 }
 function penUI(){
   var hl=(tool==='hl');
@@ -901,6 +910,7 @@ function objUI(){
     $('sRadRow').classList.toggle('hidden',a.type!=='rect');
     if(a.type==='rect'){var rv=Math.round((a.rx||0)/(Math.min(a.width,a.height)/2)*100);setVal('sRad',rv);$('sRadv').textContent=rv+'%';}
   }
+  if(I)$('iDpi').innerHTML=dpiNote(96/Math.max(Math.abs(a.scaleX||1),Math.abs(a.scaleY||1)),'這張圖');
   var r=a.getBoundingRect(true,true);
   setVal('pX',n1(r.left/CM));setVal('pY',n1(r.top/CM));setVal('pW',n1(r.width/CM));setVal('pH',n1(r.height/CM));
   $('pBot').textContent='頂邊離底 '+n1((H()-r.top)/CM)+' cm · 底邊離底 '+n1((H()-r.top-r.height)/CM)+' cm';

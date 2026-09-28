@@ -143,6 +143,7 @@ input[type=file]{display:none}
     <button class="tool" data-tool="pen" title="畫筆 (P)"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/></svg>畫筆</button>
     <button class="tool" data-tool="hl" title="螢光筆 (M)"><svg viewBox="0 0 24 24"><path d="M9 15l-3 5h6l1-2"/><path d="M8 14l8-10 4 3-8 10z"/></svg>螢光筆</button>
     <button class="tool" data-tool="erase" title="擦膠:擦走畫過的線 (E)"><svg viewBox="0 0 24 24"><path d="M8 20h12"/><path d="M4 16l9-9 5 5-8 8H8z"/></svg>擦膠</button>
+    <button class="tool" data-tool="magic" title="魔法筆:塗過圖片上的字,自動清走 (J)"><svg viewBox="0 0 24 24"><path d="M4 20L14 10"/><path d="M16 3v3M19.5 4.5l-2 2M21 8h-3M19.5 11.5l-2-2M12.5 4.5l2 2"/></svg>魔法筆</button>
     <span class="rsep"></span>
     <button class="tool" data-act="text" title="加文字 (T),或者雙擊畫布"><svg viewBox="0 0 24 24"><path d="M5 7V4h14v3M12 4v16M9 20h6"/></svg>文字</button>
     <button class="tool" data-act="shape" title="加形狀"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="9" height="9"/><circle cx="16.5" cy="16.5" r="4.5"/></svg>形狀</button>
@@ -183,6 +184,7 @@ input[type=file]{display:none}
         <div><label>出圖 dpi</label><input type="number" id="cd" step="10" min="30"></div>
         <div><label>出圖尺寸 (px)</label><input type="text" id="cpx" disabled></div>
       </div>
+      <p class="hint" id="cEst">預計檔案大小:計算中</p>
       <div class="row"><span class="lbl">常用尺寸</span>
         <div class="chips">
           <button class="btn g sm" data-size="300,250,200">背景板 300×250</button>
@@ -227,6 +229,14 @@ input[type=file]{display:none}
       <div class="row"><input type="color" id="penC"></div>
       <div class="row"><label>粗幼 <span class="val" id="penWv"></span></label><input type="range" id="penW" min="1" max="120"></div>
       <p class="hint">粗幼跟你眼見的畫面一樣,放大之後畫會更幼更細緻。畫錯了用「擦膠」擦走整條線,或者 Ctrl+Z。</p>
+    </div>
+
+    <div id="pMagic" class="hidden">
+      <h4>魔法筆</h4>
+      <p class="hint">在圖片或者背景圖上<b>塗過</b>想清走的字、水印、雜物,放手之後會自動用旁邊的紋理補返,好似本來沒有那樣東西。只會改你塗過的地方,其他像素一粒都不會動;不滿意就 Ctrl+Z。</p>
+      <div class="row"><label>筆粗幼 <span class="val" id="mgWv"></span></label><input type="range" id="mgW" min="4" max="200"></div>
+      <p class="hint">要塗得比字大少少,連字的陰影、描邊都要蓋住。一次塗一小段效果最好,大片地方分幾次塗。</p>
+      <p class="hint" id="mgState">第一次用要下載一個 27 MB 的模型(MI-GAN),之後存在這部機,不用再下載。全部在你的瀏覽器裡面做,圖片不會送去任何地方。</p>
     </div>
 
     <div id="pObj" class="hidden">
@@ -352,7 +362,7 @@ var SW=['#ffffff','#111111','#e7b173','#ffd84d','#e05252','#ff7ab6','#4f8ff7','#
 var wrap=$('wrap');
 var tool='select',spaceDown=false,panArm=false,panning=null,erasing=false,snapOn=true,GUIDES=[];
 var booting=true,restoring=false,HIST=[],HI=-1,snapT=null,saveT=null,CLIP=null,fitZ=1;
-var pen={c:'#e7b173',w:6,hc:'#ffd84d',hw:28};
+var pen={c:'#e7b173',w:6,hc:'#ffd84d',hw:28,mw:36};
 
 var OP=fabric.Object.prototype;
 OP.transparentCorners=false;OP.cornerColor='#f3cf99';OP.cornerStrokeColor='#0b0905';OP.borderColor='#e7b173';
@@ -493,7 +503,7 @@ function panBy(dx,dy){var v=canvas.viewportTransform;v[4]+=dx;v[5]+=dy;canvas.se
 
 /* ---------- tools ---------- */
 function applyToolState(keepSel){
-  var draw=(tool==='pen'||tool==='hl')&&!spaceDown;
+  var draw=(tool==='pen'||tool==='hl'||tool==='magic')&&!spaceDown;
   canvas.isDrawingMode=draw;
   canvas.selection=(tool==='select'&&!spaceDown);
   canvas.skipTargetFind=(tool==='hand'||spaceDown||draw);
@@ -512,9 +522,9 @@ function setTool(t){
 }
 function updateBrush(){
   var b=canvas.freeDrawingBrush;if(!b)return;
-  var z=canvas.getZoom(),hl=(tool==='hl');
-  b.width=Math.max(0.2,(hl?pen.hw:pen.w)/z);
-  b.color=hl?hexA(pen.hc,0.42):pen.c;
+  var z=canvas.getZoom(),hl=(tool==='hl'),mg=(tool==='magic');
+  b.width=Math.max(0.2,(mg?pen.mw:(hl?pen.hw:pen.w))/z);
+  b.color=mg?'rgba(255,70,120,.55)':(hl?hexA(pen.hc,0.42):pen.c);
   b.strokeLineCap='round';b.strokeLineJoin='round';b.decimate=0.4;
 }
 
@@ -630,7 +640,7 @@ function doSnap(){
   if(booting||restoring)return;
   var a=canvas.getActiveObject();if(a&&a.isEditing)return;
   var j=JSON.stringify(state());if(HIST[HI]===j)return;
-  HIST=HIST.slice(0,HI+1);HIST.push(j);if(HIST.length>80)HIST.shift();HI=HIST.length-1;histUI();autosave();
+  HIST=HIST.slice(0,HI+1);HIST.push(j);if(HIST.length>80)HIST.shift();HI=HIST.length-1;histUI();autosave();estimateSoon();
 }
 function histUI(){$('bUndo').disabled=HI<=0;$('bRedo').disabled=HI>=HIST.length-1;}
 function restore(js,cb){
@@ -796,7 +806,9 @@ canvas.on('text:changed',function(opt){
 });
 canvas.on('text:editing:exited',function(){snapshot();objUI();layersSoon();});
 canvas.on('path:created',function(opt){
-  var p=opt.path;p.set({isDrawn:true,perPixelTargetFind:true,ngName:tool==='hl'?'螢光筆':'畫筆',strokeUniform:false});
+  var p=opt.path;
+  if(tool==='magic'){canvas.remove(p);MQ.push(p);runMagicQueue();return;}
+  p.set({isDrawn:true,perPixelTargetFind:true,ngName:tool==='hl'?'螢光筆':'畫筆',strokeUniform:false});
   applySelectable(p);snapshot();layersSoon();
 });
 ['selection:created','selection:updated','selection:cleared'].forEach(function(ev){canvas.on(ev,function(){panelUI();layersSoon();});});
@@ -849,11 +861,169 @@ function liveUI(){if(liveQ)return;liveQ=true;requestAnimationFrame(function(){li
 var layQ=false;
 function layersSoon(){if(layQ)return;layQ=true;requestAnimationFrame(function(){layQ=false;layersUI();});}
 function panelUI(){
-  var a=canvas.getActiveObject(),drawing=(tool==='pen'||tool==='hl');
+  var a=canvas.getActiveObject(),drawing=(tool==='pen'||tool==='hl'),magic=(tool==='magic');
   $('pPen').classList.toggle('hidden',!drawing);
-  $('pObj').classList.toggle('hidden',drawing||!a);
-  $('pDoc').classList.toggle('hidden',drawing||!!a);
-  if(drawing)penUI();else if(a)objUI();else docUI();
+  $('pMagic').classList.toggle('hidden',!magic);
+  $('pObj').classList.toggle('hidden',drawing||magic||!a);
+  $('pDoc').classList.toggle('hidden',drawing||magic||!!a);
+  if(drawing)penUI();else if(magic)magicUI();else if(a)objUI();else docUI();
+}
+function magicUI(){setVal('mgW',pen.mw);$('mgWv').textContent=pen.mw+' px';}
+
+/* ---------- magic pen: MI-GAN inpainting in the browser ---------- */
+var ORT_JS='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.wasm.min.js';
+var ORT_DIR='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/';
+var MIGAN='https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx';
+var SESSION=null,MQ=[],mBusy=false;
+function loadScript(src){return new Promise(function(res,rej){var s=document.createElement('script');s.src=src;s.onload=res;
+  s.onerror=function(){rej(new Error('載入不到 '+src));};document.head.appendChild(s);});}
+async function fetchProgress(url,cb){
+  var r=await fetch(url);if(!r.ok)throw new Error('下載模型失敗 '+r.status);
+  var total=+r.headers.get('content-length')||28079181,got=0,chunks=[],rd=r.body.getReader();
+  for(;;){var x=await rd.read();if(x.done)break;chunks.push(x.value);got+=x.value.length;cb(Math.min(1,got/total));}
+  var out=new Uint8Array(got),o=0;chunks.forEach(function(c){out.set(c,o);o+=c.length;});return out.buffer;
+}
+async function getSession(){
+  if(SESSION)return SESSION;
+  if(!window.ort){say(3,'載入魔法筆引擎');await loadScript(ORT_JS);}
+  ort.env.wasm.wasmPaths=ORT_DIR;
+  ort.env.wasm.numThreads=self.crossOriginIsolated?Math.min(4,navigator.hardwareConcurrency||2):1;
+  var buf=await kvGet('migan-v2');
+  if(!buf){
+    buf=await fetchProgress(MIGAN,function(p){say(5+p*80,'第一次用:下載魔法筆模型 '+Math.round(p*100)+'%(27 MB,之後不用再下載)');});
+    kvSet('migan-v2',buf);
+  }
+  say(88,'啟動魔法筆');
+  SESSION=await ort.InferenceSession.create(new Uint8Array(buf),{executionProviders:['wasm'],graphOptimizationLevel:'all'});
+  $('mgState').textContent='魔法筆已準備好,模型已存在這部機。塗過圖片上的字,放手就會清走。';
+  return SESSION;
+}
+async function runMagicQueue(){
+  if(mBusy)return;mBusy=true;
+  try{while(MQ.length){await magicStroke(MQ.shift());}}
+  catch(e){say(0,'魔法筆出錯:'+(e&&e.message||e));}
+  finally{mBusy=false;}
+}
+function hitBox(a,b){return !(a.left>b.left+b.width||a.left+a.width<b.left||a.top>b.top+b.height||a.top+a.height<b.top);}
+async function magicStroke(path){
+  var pr=path.getBoundingRect(true,true);
+  var imgs=canvas.getObjects().filter(function(o){return o.type==='image'&&o.visible!==false&&hitBox(o.getBoundingRect(true,true),pr);});
+  if(!imgs.length){say(100,'魔法筆只可以塗在圖片或者背景圖上面;畫布上加的字、形狀,選取再刪就可以');return;}
+  var sess=await getSession();
+  for(var i=imgs.length-1;i>=0;i--){
+    say(90,'清除中');
+    var ok=await inpaintImage(sess,imgs[i],path);
+    if(ok){canvas.requestRenderAll();snapshot();say(100,'已清走,只改了你塗過的地方(Ctrl+Z 可以還原)');return;}
+  }
+  say(100,'塗的位置沒有碰到圖片');
+}
+async function inpaintImage(sess,img,path){
+  var el=img.getElement(),iw=el.naturalWidth||el.width,ih=el.naturalHeight||el.height;
+  var M=fabric.util.invertTransform(img.calcTransformMatrix());
+  var sx=iw/img.width,sy=ih/img.height;
+  function toPix(x,y){var t=fabric.util.transformPoint({x:x,y:y},M);return{x:(t.x+img.width/2)*sx,y:(t.y+img.height/2)*sy};}
+  var pr=path.getBoundingRect(true,true);
+  var cs=[toPix(pr.left,pr.top),toPix(pr.left+pr.width,pr.top),toPix(pr.left,pr.top+pr.height),toPix(pr.left+pr.width,pr.top+pr.height)];
+  var bx0=Math.max(0,Math.floor(Math.min.apply(null,cs.map(function(p){return p.x;})))-4);
+  var by0=Math.max(0,Math.floor(Math.min.apply(null,cs.map(function(p){return p.y;})))-4);
+  var bx1=Math.min(iw,Math.ceil(Math.max.apply(null,cs.map(function(p){return p.x;})))+4);
+  var by1=Math.min(ih,Math.ceil(Math.max.apply(null,cs.map(function(p){return p.y;})))+4);
+  if(bx1-bx0<2||by1-by0<2)return false;
+  var mc=document.createElement('canvas');mc.width=bx1-bx0;mc.height=by1-by0;var mx=mc.getContext('2d');
+  mx.translate(-bx0,-by0);mx.scale(sx,sy);mx.translate(img.width/2,img.height/2);mx.transform(M[0],M[1],M[2],M[3],M[4],M[5]);
+  var keep={stroke:path.stroke,sw:path.strokeWidth,shadow:path.shadow,oc:path.objectCaching};
+  path.set({stroke:'#ffffff',strokeWidth:path.strokeWidth*1.12,shadow:null,objectCaching:false,opacity:1});
+  path.render(mx);
+  path.set({stroke:keep.stroke,strokeWidth:keep.sw,shadow:keep.shadow,objectCaching:keep.oc});
+  var md=mx.getImageData(0,0,mc.width,mc.height).data,hx0=1e9,hy0=1e9,hx1=-1,hy1=-1;
+  for(var y=0;y<mc.height;y++)for(var x=0;x<mc.width;x++)if(md[(y*mc.width+x)*4]>100){
+    if(x<hx0)hx0=x;if(x>hx1)hx1=x;if(y<hy0)hy0=y;if(y>hy1)hy1=y;}
+  if(hx1<0)return false;
+  hx0+=bx0;hx1+=bx0;hy0+=by0;hy1+=by0;
+  /* fill tile by tile at the picture's own resolution (the model works best around 512 px),
+     each tile sees the tiles already filled as real context */
+  var MW=mc.width,MH=mc.height,hm=new Uint8Array(MW*MH),holes=0;
+  for(var q=0;q<MW*MH;q++)if(md[q*4]>100){hm[q]=1;holes++;}
+  function hAt(px2,py2){var qx=px2-bx0,qy=py2-by0;return(qx>=0&&qy>=0&&qx<MW&&qy<MH)?hm[qy*MW+qx]:0;}
+  var fc=document.createElement('canvas');fc.width=iw;fc.height=ih;var fx=fc.getContext('2d');fx.drawImage(el,0,0);
+  var nI=sess.inputNames.indexOf('image')>=0?'image':sess.inputNames[0];
+  var nM=sess.inputNames.indexOf('mask')>=0?'mask':sess.inputNames[1];
+  var T=256,SQ=512,tiles=[],tx,ty,xx,yy;
+  for(ty=hy0;ty<=hy1;ty+=T)for(tx=hx0;tx<=hx1;tx+=T){
+    var tx1=Math.min(tx+T,hx1+1),ty1=Math.min(ty+T,hy1+1),any=false;
+    for(yy=ty;yy<ty1&&!any;yy++)for(xx=tx;xx<tx1;xx++)if(hAt(xx,yy)===1){any=true;break;}
+    if(any)tiles.push([tx,ty,tx1,ty1]);
+  }
+  for(var k=0;k<tiles.length;k++){
+    var t=tiles[k];say(90+9*k/tiles.length,'清除中 '+(k+1)+' / '+tiles.length);
+    var sw2=Math.min(SQ,iw),sh2=Math.min(SQ,ih),mx2=(t[0]+t[2])/2,my2=(t[1]+t[3])/2;
+    var cx0=Math.round(Math.max(0,Math.min(iw-sw2,mx2-sw2/2))),cy0=Math.round(Math.max(0,Math.min(ih-sh2,my2-sh2/2)));
+    var cw=sw2,ch=sh2,N=cw*ch,src=fx.getImageData(cx0,cy0,cw,ch),s=src.data;
+    var imgT=new Uint8Array(3*N),maskT=new Uint8Array(N),sr=0,sg=0,sb=0,sn=0;
+    for(var i=0;i<N;i++){
+      var h=hAt(cx0+(i%cw),cy0+((i/cw)|0))===1;
+      maskT[i]=h?0:255;
+      if(!h){sr+=s[i*4];sg+=s[i*4+1];sb+=s[i*4+2];sn++;}
+    }
+    sn=sn||1;sr=Math.round(sr/sn);sg=Math.round(sg/sn);sb=Math.round(sb/sn);
+    for(i=0;i<N;i++){
+      if(maskT[i]){imgT[i]=s[i*4];imgT[N+i]=s[i*4+1];imgT[2*N+i]=s[i*4+2];}
+      else{imgT[i]=sr;imgT[N+i]=sg;imgT[2*N+i]=sb;}
+    }
+    var feeds={};feeds[nI]=new ort.Tensor('uint8',imgT,[1,3,ch,cw]);feeds[nM]=new ort.Tensor('uint8',maskT,[1,1,ch,cw]);
+    var res=await sess.run(feeds),o=res[sess.outputNames[0]].data;
+    /* grain: measure how "noisy" the untouched pixels around are, then add the same amount of random grain */
+    var gd=0,gn=0;
+    for(i=0;i<N-1;i++){if(maskT[i]&&maskT[i+1]&&(i%cw)<cw-1){var dl=(s[i*4]+s[i*4+1]+s[i*4+2]-s[i*4+4]-s[i*4+5]-s[i*4+6])/3;gd+=dl*dl;gn++;}}
+    var sig=gn?Math.sqrt(gd/gn/2):0;
+    var od=0,on=0;
+    for(i=0;i<N-1;i++){if(!maskT[i]&&!maskT[i+1]&&(i%cw)<cw-1){var dl2=(o[i]+o[N+i]+o[2*N+i]-o[i+1]-o[N+i+1]-o[2*N+i+1])/3;od+=dl2*dl2;on++;}}
+    var osig=on?Math.sqrt(od/on/2):0,add=Math.sqrt(Math.max(0,sig*sig-osig*osig))*0.9;
+    function gauss(){var u=1-Math.random(),v2=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(6.283185*v2);}
+    for(yy=t[1];yy<t[3];yy++)for(xx=t[0];xx<t[2];xx++){
+      if(hAt(xx,yy)!==1)continue;
+      var j=(yy-cy0)*cw+(xx-cx0),nz=add?gauss()*add:0;
+      s[j*4]=Math.max(0,Math.min(255,Math.round(o[j]+nz)));s[j*4+1]=Math.max(0,Math.min(255,Math.round(o[N+j]+nz)));s[j*4+2]=Math.max(0,Math.min(255,Math.round(o[2*N+j]+nz)));
+      hm[(yy-by0)*MW+(xx-bx0)]=2;
+    }
+    fx.putImageData(src,cx0,cy0);
+    await new Promise(function(r){setTimeout(r,0);});
+  }
+  var blob=await new Promise(function(r){fc.toBlob(r,'image/png');});
+  if(!blob)throw new Error('圖太大,瀏覽器存不到');
+  var url=URL.createObjectURL(blob);REG[url]={blob:blob};
+  var ni=await new Promise(function(res2,rej){var im=new Image();im.onload=function(){res2(im);};im.onerror=rej;im.src=url;});
+  img.setElement(ni);img.set({width:img.width,height:img.height});img.dirty=true;img.setCoords();
+  window.__lastMagic={tiles:tiles.length,holePx:holes,size:[iw,ih]};
+  return true;
+}
+
+/* ---------- export file size estimate (samples real-resolution tiles) ---------- */
+var estT=null,EST=null;
+function estimateSoon(){clearTimeout(estT);estT=setTimeout(estimate,1500);}
+function toBlobP(el,type,q){return new Promise(function(r){el.toBlob(function(b){r(b);},type,q);});}
+function mbText(b){return b>=10485760?Math.round(b/1048576)+' MB':(b/1048576).toFixed(1)+' MB';}
+async function estimate(){
+  if(booting||restoring||mBusy||panning)return;
+  try{
+    var o2=outPx(),v=canvas.viewportTransform,z=v[0],mult=o2.w/(W()*z),T=Math.min(512,o2.w,o2.h),G=3;
+    var trans=(S.bg==='transparent'),pb=0,jb=0,px=0;
+    var flt=function(o){return !(trans&&o.isPage)&&o.visible!==false;};
+    for(var gy=0;gy<G;gy++)for(var gx=0;gx<G;gx++){
+      var ex=(o2.w-T)*(gx+0.5)/G,ey=(o2.h-T)*(gy+0.5)/G;
+      var el=canvas.toCanvasElement(mult,{left:v[4]+ex/mult,top:v[5]+ey/mult,width:T/mult,height:T/mult,filter:flt});
+      var b1=await toBlobP(el,'image/png');
+      var c2=document.createElement('canvas');c2.width=el.width;c2.height=el.height;var x2=c2.getContext('2d');
+      x2.fillStyle='#fff';x2.fillRect(0,0,c2.width,c2.height);x2.drawImage(el,0,0);
+      var b2=await toBlobP(c2,'image/jpeg',0.94);
+      if(b1&&b2){pb+=b1.size;jb+=b2.size;px+=el.width*el.height;}
+      await new Promise(function(r){setTimeout(r,0);});
+    }
+    if(!px)return;
+    var tot=o2.w*o2.h;EST={png:pb/px*tot,jpg:jb/px*tot};
+    $('cEst').innerHTML='預計檔案大小:<b>PNG 約 '+mbText(EST.png)+'</b> · <b>JPG 約 '+mbText(EST.jpg)+'</b>(出完會顯示實際大小)';
+    $('bPng').textContent='匯出 PNG · 約 '+mbText(EST.png);$('bJpg').textContent='匯出 JPG · 約 '+mbText(EST.jpg);
+  }catch(e){$('cEst').textContent='預計檔案大小:計算不到('+(e&&e.message||e)+')';}
 }
 function docUI(){
   setVal('cw',n1(S.w));setVal('ch',n1(S.h));setVal('cd',S.dpi);
@@ -1100,7 +1270,7 @@ addEventListener('keydown',function(e){
   if(k.indexOf('Arrow')===0&&a){e.preventDefault();if(a.ngLocked)return;var d=(e.shiftKey?10:1)/canvas.getZoom();
     moveBy(a,k==='ArrowLeft'?-d:k==='ArrowRight'?d:0,k==='ArrowUp'?-d:k==='ArrowDown'?d:0);canvas.requestRenderAll();objUI();snapshot();return;}
   if(k===']'){order('up');return;}if(k==='['){order('down');return;}
-  var map={v:'select',h:'hand',p:'pen',m:'hl',e:'erase'};
+  var map={v:'select',h:'hand',p:'pen',m:'hl',e:'erase',j:'magic'};
   if(map[kl]){setTool(map[kl]);return;}
   if(kl==='t'){addText();return;}if(kl==='r'){addShape('rect');return;}if(kl==='o'){addShape('circle');return;}if(kl==='l'){addShape('line');return;}
 });
@@ -1116,7 +1286,8 @@ function onResize(){
 if(window.ResizeObserver)new ResizeObserver(onResize).observe(wrap);else addEventListener('resize',onResize);
 resize();lastSize={w:canvas.getWidth(),h:canvas.getHeight()};
 ensurePage();fit();setTool('select');docUI();layersUI();histUI();
-function startFresh(msg){booting=false;HIST=[JSON.stringify(state())];HI=0;histUI();if(msg)say(0,msg);}
+function startFresh(msg){booting=false;HIST=[JSON.stringify(state())];HI=0;histUI();if(msg)say(0,msg);estimateSoon();}
+$('mgW').addEventListener('input',function(){pen.mw=+$('mgW').value;updateBrush();magicUI();});
 kvGet('autosave').then(function(v){
   if(v&&v.json){
     var js=v.json;
